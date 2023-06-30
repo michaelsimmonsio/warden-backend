@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId} = require('mongodb');
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -49,6 +49,18 @@ io.on('connection', (socket) => {
         if (message.action === "newReport") {
             addReport(message).then(r => console.log("added report"));
         }
+
+        if (message.action === "deleteReport") {
+            console.log("would delete report" + message.id);
+            // deleteReport(message);
+            manualAddReports(10);
+        }
+
+        if (message.action === "rejectReport") {
+            console.log("would reject report" + message.id);
+            rejectReport(message);
+
+        }
         console.log('received:', message);
     });
 });
@@ -92,10 +104,100 @@ async function addReport(message) {
 
             io.emit('newReport', newReport);
 
-            client.close();
+            await client.close();
         } catch (error) {
             console.error('Failed to insert new report:', error);
         }
+    }
+
+}
+
+async function deleteReport(message) {
+    try {
+        const client = await MongoClient.connect(mongoURI);
+        const db = client.db('reports');
+        const collection = db.collection('reports');
+
+        // This is why we love Typescript!
+        // Searching by "id" doesn't work, needs to be cast as an ObjectId first
+        const id = new ObjectId(message.id)
+
+        const result = await collection.deleteOne({ _id: id });
+        console.log("attempting to delete: " + id)
+
+        if (result.deletedCount === 1) {
+            console.log('Report deleted');
+            await manualAddReports(10);
+        }
+
+        if (result.deletedCount === 0) {
+            console.log('Report not found');
+        }
+        await client.close();
+    } catch (error) {
+        console.error('Failed to delete report:', error);
+    }
+}
+
+async function manualAddReports(number) {
+    try {
+        console.log("here 1")
+        const client = await MongoClient.connect(mongoURI);
+        const db = client.db('reports');
+        const collection = db.collection('reports');
+
+        let unix_timestamp = Date.now();
+
+        const newReport = {
+            username: 'TestUsername',
+            uid: 'testUID',
+            reportedUser: 'TestReportedUser',
+            reporter: 'TestReporter',
+            reason: 'TestReason',
+            context: 'TestContext',
+            date: 'TestDate',
+            status: 'TestStatus',
+            contextJson: {
+                "12345": "test",
+                "12345-1": "test2",
+                "12345-2": "test3"
+            }
+        };
+
+        // Wait for the connection to be established before proceeding
+        // await new Promise((resolve, reject) => {
+        //     client.on('connect', resolve);
+        //     client.on('error', reject);
+        // }).then(() => console.log('Connected to MongoDB'));
+
+        for (let i = 0; i < number; i++) {
+            const result = await collection.insertOne(newReport);
+            console.log('New report added:', result.insertedId + ' ' + i);
+
+            io.emit('newReport', newReport);
+        }
+
+        await client.close();
+    } catch (error) {
+        console.error('Failed to add reports:', error);
+    }
+
+}
+
+async function rejectReport(message) {
+    // find item in mongodb and change "status" to rejected
+
+    try {
+
+        const client = await MongoClient.connect(mongoURI);
+        const db = client.db('reports');
+        const collection = db.collection('reports');
+        const id = new ObjectId(message.id)
+
+        const result = await collection.findOneAndUpdate({ _id: id }, { $set: { status: "rejected" }});
+        console.log("result: " + result)
+    } catch(error) {
+        console.error('Failed to reject report:', error);
     }
 
 }
